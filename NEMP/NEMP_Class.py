@@ -7,6 +7,8 @@ import traceback
 from distutils.version import LooseVersion
 from StringIO import StringIO
 
+from pprint import pprint
+
 logging.getLogger('requests').setLevel(logging.WARNING)
 
 class NotEnoughClasses():
@@ -48,6 +50,7 @@ class NotEnoughClasses():
         for mod in self.mods:
             if "change" not in self.mods[mod]:
                 self.mods[mod]["change"] = "NOT_USED"
+            self.mods[mod]['nem'] = []
 
     def buildHTML(self):
         headerText = ""
@@ -69,7 +72,7 @@ class NotEnoughClasses():
                 f.write("""
             <td class='function'>{}</td>
             <td class='mc_version'>{}</td>
-""".format(info["function"], info["mc"]))
+""".format(info["function"], info['nem'][-1]["mc"]))
                 try:
                     f.write("            <td class='category'>{}</td>\r\n".format(info["category"]))
                 except:
@@ -87,40 +90,30 @@ class NotEnoughClasses():
             self.nemVersions = reversed(["1.4.5", "1.4.6-1.4.7", "1.5.1", "1.5.2", "1.6.1", "1.6.2", "1.6.4", "1.7.2"])
 
     def InitiateVersions(self):
-        #Store a list of mods so we dont override our version
         templist = self.mods.keys()
+
         try:
             #for MC version in NEM's list
             for version in self.nemVersions:
                 #Get the NEM List for this MC Version
                 jsonres = self.fetch_json("http://bot.notenoughmods.com/" + version + ".json")
-                
+
                 #For each NEM Mod...
                 for mod in jsonres:
                     #Is it in our list?
                     if mod["name"] in templist:
-                        #Its in our list, lets store this info
-                        self.mods[mod["name"]]["mc"] = version
-                        
+                        mod_info = {'mc': version, 'version': str(mod['version'])}
+
                         #Does this NEM Mod have a dev version
                         if "dev" in mod and mod["dev"]:
                             #It does
-                            self.mods[mod["name"]]["dev"] = str(mod["dev"])
+                            mod_info['dev'] = str(mod['dev'])
                         else:
                             #It doesn't
-                            self.mods[mod["name"]]["dev"] = "NOT_USED"
-                            
-                        #Does this NEM Mod have a version (not required, but yay redundancy)
-                        if "version" in mod and mod["version"]:
-                            #What a suprise, it did...
-                            self.mods[mod["name"]]["version"] = str(mod["version"])
-                        else:
-                            #What the actual fuck, how did this happen
-                            self.mods[mod["name"]]["version"] = "NOT_USED"
-                            
-                        #We have had our way with this mod, throw it away
-                        templist.remove(mod["name"])
-                        
+                            mod_info['dev'] = 'NOT_USED'
+
+                        self.mods[mod['name']]['nem'].insert(0, mod_info)
+
                 # ok, so it wasn't directly on the list, is it indirectly on the list though.
                 for lonelyMod in templist:
                     #Is this mod a PykerHack(tm)
@@ -129,25 +122,19 @@ class NotEnoughClasses():
                         for lonelyTestMod in jsonres:
                             #Is it here?
                             if self.mods[lonelyMod]["name"] == lonelyTestMod["name"]:
-                                 # ok, does it exist for this MC version.
-                                self.mods[lonelyMod]["mc"] = version
-                                
+                                # ok, does it exist for this MC version.
+                                mod_info = {'mc': version, 'version': str(lonelyTestMod['version'])}
+
                                 #Does it have a dev version
                                 if "dev" in lonelyTestMod and lonelyTestMod["dev"]:
                                     #It did
-                                    self.mods[lonelyMod]["dev"] = str(lonelyTestMod["dev"])
+                                    mod_info['dev'] = str(lonelyTestMod['dev'])
                                 else:
                                     #It didn't
-                                    self.mods[lonelyMod]["dev"] = "NOT_USED"
-                                # #Redundancy
-                                if "version" in lonelyTestMod and lonelyTestMod["version"]:
-                                    #yay
-                                    self.mods[lonelyMod]["version"] = str(lonelyTestMod["version"])
-                                else:
-                                    #wat
-                                    self.mods[lonelyMod]["version"] = "NOT_USED"
-                                #gtfo LonelyMod, noone likes you anymore
-                                templist.remove(lonelyMod)
+                                    mod_info['dev'] = 'NOT_USED'
+
+                                self.mods[lonelyMod]['nem'].insert(0, mod_info)
+
         except:
             pass
             # most likely a timeout
@@ -205,10 +192,10 @@ class NotEnoughClasses():
             return output
 
     def CheckChickenBones(self, mod):
-        result = self.fetch_page("http://www.chickenbones.net/Files/notification/version.php?version=" + self.mods[mod]["mc"] + "&file=" + mod)
+        result = self.fetch_page("http://www.chickenbones.net/Files/notification/version.php?version=" + self.mods[mod]['nem'][-1]["mc"] + "&file=" + mod)
         if result.startswith("Ret: "):  # Hacky I know, but this is how ChickenBones does it in his mod
             new_version = result[5:]
-            if LooseVersion(new_version) > LooseVersion(self.mods[mod]['version']):
+            if LooseVersion(new_version) > LooseVersion(self.mods[mod]['nem'][-1]['version']):
                 return {
                     "version": new_version
                 }
@@ -279,7 +266,7 @@ class NotEnoughClasses():
             match = match.groupdict()
 
             if 'mc' not in match:
-                match['mc'] = self.mods[mod]['mc']
+                match['mc'] = self.mods[mod]['nem'][-1]['mc']
 
             # we already have the 'version', 'dev' and 'mc' fields from the regex
             return match
@@ -296,7 +283,7 @@ class NotEnoughClasses():
         return output
 
     def CheckSpacechase(self, mod):
-        result = self.fetch_page("http://spacechase0.com/wp-content/plugins/mc-mod-manager/nem.php?mc=" + self.mods[mod]["mc"][2:])
+        result = self.fetch_page("http://spacechase0.com/wp-content/plugins/mc-mod-manager/nem.php?mc=" + self.mods[mod]['nem'][-1]["mc"][2:])
         for line in result.splitlines():
             info = line.split(',')
             # 0 = ID, 1=NEM ID, 2=ModID, 3=Author, 4=Link, 5=Version, 6=Comment
@@ -366,27 +353,49 @@ class NotEnoughClasses():
         try:
             # [dev change, version change]
             status = [False, False]
+
             output = getattr(self, self.mods[mod]["function"])(mod)
+
+            if "mc" in output:
+                mc = output['mc']
+                mod_info = None
+                for elem in self.mods[mod]['nem']:
+                    if elem['mc'] == mc:
+                        mod_info = elem
+                        break
+            else:
+                mc = self.mods[mod]['nem'][-1]['mc']
+                mod_info = self.mods[mod]['nem'][-1]
+
             if "dev" in output:
                 # Remove whitespace at the end and start
-                self.mods[mod]["dev"] = self.mods[mod]["dev"].strip()
+                mod_info['dev'] = mod_info['dev'].strip()
                 output["dev"] = output["dev"].strip()
-                if self.mods[mod]["dev"] != output["dev"]:
-                    self.mods[mod]["dev"] = output["dev"]
+                if mod_info['dev'] != output["dev"]:
+                    mod_info['dev'] = output["dev"]
                     status[0] = True
+
             if "version" in output:
                 # Remove whitespace at the end and start
-                self.mods[mod]["version"] = self.mods[mod]["version"].strip()
+                mod_info['version'] = mod_info['version'].strip()
                 output["version"] = output["version"].strip()
-                if self.mods[mod]["version"] != output["version"]:
-                    self.mods[mod]["version"] = output["version"]
+                if mod_info['version'] != output["version"]:
+                    mod_info['version'] = output["version"]
                     status[1] = True
-            if "mc" in output:
-                self.mods[mod]["mc"] = output["mc"]
+
             if "change" in output and "changelog" not in self.mods[mod]:
                 self.mods[mod]["change"] = output["change"]
+
             return status, False  # Everything went fine, no exception raised
         except:
             print(mod + " failed to be polled...")
             traceback.print_exc()
+            if 'mc' in locals() and 'mod_info' in locals():
+                print 'DEBUG INFO INCOMING. DODGE!'
+                print 'MC = %r' % (mc, )
+                print 'MOD_INFO = ',
+                pprint(mod_info)
+                print 'FULL MOD INFO = ',
+                pprint(self.mods[mod])
+            print
             return [False, False], True  # an exception was raised, so we return a True
